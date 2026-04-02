@@ -16,7 +16,7 @@ name: Daily Procurement Trawl
 on:
   schedule:
     # 7:00 AM UTC = 8:00 AM BST (summer) / 7:00 AM GMT (winter)
-    - cron: '0 7 * * 1-5'   # weekdays only
+    - cron: '0 7 * * 1'     # Mondays only
 
   # Allow manual trigger from GitHub Actions UI
   workflow_dispatch:
@@ -24,7 +24,7 @@ on:
       days:
         description: 'Days to look back'
         required: false
-        default: '1'
+        default: '7'
 
 jobs:
   trawl:
