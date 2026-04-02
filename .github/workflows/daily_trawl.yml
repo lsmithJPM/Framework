@@ -24,7 +24,7 @@ on:
       days:
         description: 'Days to look back'
         required: false
-        default: '7'
+        default: '30'
 
 jobs:
   trawl:
