@@ -209,18 +209,20 @@ def fetch_find_a_tender(days_back: int) -> list[Opportunity]:
     """
     Query the Find a Tender OCDS API.
     Docs: https://www.find-tender.service.gov.uk/Developer/Documentation
-    No API key required for public OCDS search endpoint.
+    Uses the public OCDS search endpoint - no API key required.
     """
     print(f"\n[Find a Tender] Searching last {days_back} days...")
 
     published_from = (datetime.now(timezone.utc) - timedelta(days=days_back)).strftime("%Y-%m-%d")
+    published_to = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-    # FTS uses the OCDS releases endpoint for public search
+    # Correct public search endpoint
     base_url = "https://www.find-tender.service.gov.uk/api/1.0/ocdsReleasePackages"
     params = {
-        "publishedFrom": published_from,
-        "limit": 100,
-        "offset": 0,
+        "released[from]": published_from,
+        "released[to]": published_to,
+        "stages[]": "tender",
+        "page": 1,
     }
 
     opportunities = []
@@ -230,8 +232,8 @@ def fetch_find_a_tender(days_back: int) -> list[Opportunity]:
         try:
             response = requests.get(base_url, params=params, timeout=30,
                                     headers={"Accept": "application/json"})
-            if response.status_code == 404:
-                # Try the alternative search endpoint
+            if response.status_code in (400, 404):
+                print(f"  [!] Find a Tender API error: {response.status_code} — {response.text[:200]}")
                 break
             response.raise_for_status()
             data = response.json()
@@ -303,10 +305,12 @@ def fetch_find_a_tender(days_back: int) -> list[Opportunity]:
                 matched_keywords=matched,
             ))
 
-        # Pagination
-        total = data.get("total", data.get("count", 0))
-        params["offset"] += params["limit"]
-        if params["offset"] >= total or params["offset"] >= 500:
+        # Pagination — FTS uses page-based pagination
+        links = data.get("links", {})
+        if not links.get("next"):
+            break
+        params["page"] += 1
+        if params["page"] > 10:  # safety cap
             break
 
     print(f"  → Found {len(opportunities)} relevant results")
