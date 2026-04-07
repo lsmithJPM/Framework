@@ -9,6 +9,10 @@ on:
         description: 'Days to look back'
         required: false
         default: '7'
+      debug:
+        description: 'Run in debug mode? (yes/no)'
+        required: false
+        default: 'no'
 
 jobs:
   trawl:
@@ -35,9 +39,14 @@ jobs:
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
         run: |
           DAYS="${{ github.event.inputs.days }}"
+          DEBUG="${{ github.event.inputs.debug }}"
           if [ -z "$DAYS" ]; then DAYS="7"; fi
           echo "Searching last $DAYS days..."
-          python trawler.py --days $DAYS --email --output results_$(date +%Y%m%d).csv
+          if [ "$DEBUG" = "yes" ]; then
+            python trawler.py --debug
+          else
+            python trawler.py --days $DAYS --email --output results_$(date +%Y%m%d).csv
+          fi
 
       - name: Upload results as artifact
         if: always()
