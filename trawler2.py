@@ -85,118 +85,74 @@ def find_matching_keywords(text: str) -> list:
 
 def fetch_contracts_finder(days_back: int) -> list:
     print(f"\n[Contracts Finder] Searching last {days_back} days...")
-
-    published_from = (datetime.now(timezone.utc) - timedelta(days=days_back)).strftime("%Y-%m-%d")
+    published_from = (datetime.now(timezone.utc) - timedelta(days=days_back)).strftime("%Y-%m-%dT%H:%M:%SZ")
     opportunities = []
     seen_ids = set()
+    cursor = None
+    page = 0
+    base_url = "https://www.contractsfinder.service.gov.uk/Published/Notices/OCDS/Search"
 
-    # Search using keyword groups — the search endpoint only returns active tenders
-    search_terms = [
-        "acoustics noise",
-        "noise vibration",
-        "air quality",
-        "acoustic assessment",
-        "environmental noise",
-        "noise assessment",
-        "vibration assessment",
-        "dust assessment",
-        "environmental survey",
-        "environmental impact assessment",
-        "acoustic consultant",
-        "noise consultant",
-    ]
+    while True:
+        params = {
+            "publishedFrom": published_from,
+            "stages": "tender",
+            "limit": 100,
+        }
+        if cursor:
+            params["cursor"] = cursor
+        try:
+            response = requests.get(base_url, params=params, timeout=30,
+                                    headers={"Accept": "application/json"})
+            response.raise_for_status()
+            data = response.json()
+        except requests.RequestException as e:
+            print(f"  [!] CF API error: {e}")
+            break
 
-    base_url = "https://www.contractsfinder.service.gov.uk/Search/Results"
+        releases = data.get("releases", [])
+        if not releases:
+            break
 
-    for term in search_terms:
-        page = 1
-        while True:
-            try:
-                response = requests.get(
-                    base_url,
-                    params={
-                        "keywords": term,
-                        "publishedFrom": published_from,
-                        "noticeTypes": "tender",   # active tenders only
-                        "page": page,
-                        "size": 100,
-                    },
-                    timeout=30,
-                    headers={"Accept": "application/json"},
-                )
+        page += 1
+        print(f"  Page {page}: got {len(releases)} tender notices")
 
-                if response.status_code != 200:
-                    print(f"  [!] CF search returned {response.status_code} for '{term}'")
+        for release in releases:
+            ocid = release.get("ocid", "")
+            if ocid in seen_ids:
+                continue
+            seen_ids.add(ocid)
+            tender = release.get("tender", {})
+            title = tender.get("title", "No title")
+            description = tender.get("description", "")
+            matched = find_matching_keywords(f"{title} {description}")
+            if not matched:
+                continue
+            buyer_name = ""
+            for party in release.get("parties", []):
+                if "buyer" in party.get("roles", []):
+                    buyer_name = party.get("name", "")
                     break
+            published_date = release.get("date", "")[:10] if release.get("date") else "Unknown"
+            deadline = tender.get("tenderPeriod", {}).get("endDate", "")
+            deadline = deadline[:10] if deadline else "Unknown"
+            value_obj = tender.get("value", {})
+            value = f"GBP {value_obj['amount']:,.0f}" if value_obj and value_obj.get("amount") else "Unknown"
+            notice_id = release.get("id", "")
+            url = f"https://www.contractsfinder.service.gov.uk/Notice/{notice_id}" if notice_id else "https://www.contractsfinder.service.gov.uk"
+            opportunities.append(Opportunity(
+                title=title, buyer=buyer_name or "Unknown", source="Contracts Finder",
+                published=published_date, deadline=deadline, value=value,
+                description=description, url=url, matched_keywords=matched,
+            ))
+            print(f"  ✓ {title[:80]}")
 
-                try:
-                    data = response.json()
-                except Exception:
-                    # Returned HTML — try OCDS search API instead
-                    break
+        cursor = data.get("cursor")
+        if not cursor or len(releases) < 100 or page >= 50:
+            break
 
-                notices = data.get("notices", data.get("results", data.get("releases", [])))
-                if not notices:
-                    break
-
-                for notice in notices:
-                    # Handle both OCDS and native format
-                    notice_id = notice.get("id", notice.get("ocid", ""))
-                    if not notice_id or notice_id in seen_ids:
-                        continue
-                    seen_ids.add(notice_id)
-
-                    title = (notice.get("title") or
-                             notice.get("tender", {}).get("title") or
-                             "No title")
-                    description = (notice.get("description") or
-                                   notice.get("tender", {}).get("description") or "")
-                    buyer = (notice.get("organisationName") or
-                             notice.get("buyer", {}).get("name") or
-                             "Unknown")
-                    published = (notice.get("publishedDate") or
-                                 notice.get("date") or "")[:10]
-                    deadline = (notice.get("deadlineDate") or
-                                notice.get("tender", {}).get("tenderPeriod", {}).get("endDate") or "")[:10]
-                    value_raw = (notice.get("value") or
-                                 notice.get("tender", {}).get("value", {}).get("amount"))
-                    value = f"GBP {float(value_raw):,.0f}" if value_raw else "Unknown"
-
-                    url = (notice.get("link") or
-                           notice.get("url") or
-                           f"https://www.contractsfinder.service.gov.uk/Notice/{notice_id}")
-
-                    matched = find_matching_keywords(f"{title} {description}")
-                    if not matched:
-                        matched = [f"[search: {term}]"]
-
-                    opportunities.append(Opportunity(
-                        title=title, buyer=buyer, source="Contracts Finder",
-                        published=published, deadline=deadline, value=value,
-                        description=description, url=url, matched_keywords=matched,
-                    ))
-
-                if len(notices) < 100:
-                    break
-                page += 1
-                if page > 10:
-                    break
-
-            except requests.RequestException as e:
-                print(f"  [!] CF error for '{term}': {e}")
-                break
-
-    # Deduplicate
-    seen_urls = set()
-    unique = []
-    for o in opportunities:
-        if o.url not in seen_urls:
-            seen_urls.add(o.url)
-            unique.append(o)
-
-    print(f"  → Found {len(unique)} relevant results")
-    return unique
-
+    print(f"  → Found {len(opportunities)} relevant results")
+    return opportunities
+    
 
 # ─────────────────────────────────────────────
 # FIND A TENDER — keyword search via search page
