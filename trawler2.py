@@ -147,8 +147,14 @@ def fetch_contracts_finder(days_back: int) -> list:
             print(f"  ✓ {title[:80]}")
 
         cursor = data.get("cursor")
-        if not cursor or len(releases) < 100 or page >= 50:
+        if len(releases) < 100 or page >= 50:
             break
+        if cursor:
+            params["cursor"] = cursor
+        else:
+            # No cursor returned — fall back to page-based pagination
+            params["page"] = page + 1
+            params.pop("cursor", None)
 
     print(f"  → Found {len(opportunities)} relevant results")
     return opportunities
