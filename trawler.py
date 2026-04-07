@@ -148,7 +148,8 @@ def fetch_contracts_finder(days_back: int) -> list:
         total_checked += len(releases)
         total = data.get("total", 0)
         print(f"  Page {page}: got {len(releases)} notices (API total={total}, checked so far={total_checked})")
-
+        if page == 1:
+            for s in releases[:5]: print(f"  TITLE: {s.get('tender',{}).get('title','?')} | STATUS: {s.get('tender',{}).get('status','?')}")
         for release in releases:
             ocid = release.get("ocid", "")
             if ocid in seen_ids:
