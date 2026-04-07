@@ -43,9 +43,9 @@ jobs:
           if [ -z "$DAYS" ]; then DAYS="7"; fi
           echo "Searching last $DAYS days..."
           if [ "$DEBUG" = "yes" ]; then
-            python trawler.py --debug
+            python trawler2.py --debug
           else
-            python trawler.py --days $DAYS --email --output results_$(date +%Y%m%d).csv
+            python trawler2.py --days $DAYS --email --output results_$(date +%Y%m%d).csv
           fi
 
       - name: Upload results as artifact
