@@ -132,7 +132,7 @@ def fetch_contracts_finder(days_back: int) -> list:
         try:
             response = requests.get(
                 base_url,
-                params={"publishedFrom": published_from, "size": 100, "page": page},
+                params={"publishedFrom": published_from, "size": 100, "page": page, "status": "active"},
                 timeout=30
             )
             response.raise_for_status()
